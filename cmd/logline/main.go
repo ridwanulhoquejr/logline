@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"logline/internal/config"
 	"logline/internal/server"
 	"net/http"
@@ -20,10 +20,16 @@ func main() {
 	srv := server.New(cfg)
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
-	log.Printf("logline starting on %s (env=%s, log-level=%s)", addr, cfg.Env, cfg.LogLevel)
+	slog.Info("logline starting",
+		slog.String("addr", addr),
+		slog.String("env", cfg.Env),
+	)
 
 	//? The below code was written in previous lesson
 	if err := http.ListenAndServe(addr, srv); err != nil {
-		log.Fatal(err)
+		slog.Error("server stopped",
+			slog.String("error", err.Error()),
+		)
+		os.Exit(1)
 	}
 }

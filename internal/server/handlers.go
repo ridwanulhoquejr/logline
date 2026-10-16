@@ -3,7 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
+	"log/slog"
 	"logline/internal/domain"
 	"net/http"
 )
@@ -16,41 +16,59 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
+	// todo: move trace ID generation to a middleware and pass it via context
+	traceID := generateTraceID()
+	logger := s.logger.With(slog.String("trace_id", traceID))
 
-	// if Header Content-Type is json then rejects
-	if ct := r.Header.Get("Content-Type"); ct != "application/json" {
-		writeJSON(w, http.StatusUnsupportedMediaType,
-			domain.StatusResponse{Status: "Content-Type should be application/json"})
-		return
-	}
-
-	var le domain.LogEntry
-
-	err := parseJSON(w, r, &le)
-
-	if err != nil {
-		var maxByteErr *http.MaxBytesError
-		if errors.As(err, &maxByteErr) {
-			writeJSON(w, http.StatusRequestEntityTooLarge,
-				domain.ErrorResponse{Error: "Payload is too large"})
-			return
-		}
-
-		writeJSON(w, http.StatusBadRequest,
-			domain.ErrorResponse{Error: "Invalid JSON" + err.Error()})
-		return
-	}
-
-	// if not-empty then failed the validation and rejects
-	if validattion := domain.ValidateLogEntry(le); validattion != "" {
-		writeJSON(w, http.StatusBadRequest, domain.ErrorResponse{
-			Error: validattion,
+	if r.Header.Get("Content-Type") != "application/json" {
+		logger.Warn("unsupported content type",
+			slog.String("content_type", r.Header.Get("Content-Type")),
+		)
+		writeJSON(w, http.StatusUnsupportedMediaType, domain.ErrorResponse{
+			Error: "content-type must be application/json",
 		})
 		return
 	}
 
-	fmt.Printf("received: level=%s service=%s message=%s\n",
-		le.Level, le.Service, le.Message)
+	var entry domain.LogEntry
+	err := parseJSON(w, r, &entry)
+
+	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			logger.Warn("request body too large",
+				slog.String("error", err.Error()),
+			)
+			writeJSON(w, http.StatusRequestEntityTooLarge, domain.ErrorResponse{
+				Error: "request body too large",
+			})
+			return
+		}
+
+		logger.Warn("invalid JSON in request",
+			slog.String("error", err.Error()),
+		)
+		writeJSON(w, http.StatusBadRequest, domain.ErrorResponse{
+			Error: "invalid JSON: " + err.Error(),
+		})
+		return
+	}
+
+	if msg := domain.ValidateLogEntry(entry); msg != "" {
+		logger.Warn("validation failed",
+			slog.String("reason", msg),
+		)
+		writeJSON(w, http.StatusBadRequest, domain.ErrorResponse{
+			Error: msg,
+		})
+		return
+	}
+
+	logger.Info("log entry accepted",
+		slog.String("service", entry.Service),
+		slog.String("entry_level", entry.Level),
+		slog.Int64("content_length", r.ContentLength),
+	)
 
 	writeJSON(w, http.StatusCreated, domain.StatusResponse{Status: "accepted"})
 }
