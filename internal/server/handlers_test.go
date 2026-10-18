@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"logline/internal/config"
 	"net/http"
 	"net/http/httptest"
@@ -12,7 +11,7 @@ import (
 func TestHealthEndpoint(t *testing.T) {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		fmt.Errorf("error while loading config in test", err)
+		t.Errorf("error while loading config in test: %v", err)
 	}
 
 	srv := New(cfg)
@@ -34,7 +33,7 @@ func TestHealthEndpoint(t *testing.T) {
 func TestIngestValidEntry(t *testing.T) {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		fmt.Errorf("error while loading config in test", err)
+		t.Errorf("error while loading config in test: %v", err)
 	}
 
 	srv := New(cfg)
@@ -42,6 +41,7 @@ func TestIngestValidEntry(t *testing.T) {
 	payload := `{"level":"error","message":"connection refused","service":"auth","timestamp":"2026-02-27T14:30:00Z"}`
 	req := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
+
 	rec := httptest.NewRecorder()
 
 	srv.ServeHTTP(rec, req)
@@ -54,7 +54,7 @@ func TestIngestValidEntry(t *testing.T) {
 func TestIngestWrongContentType(t *testing.T) {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		fmt.Errorf("error while loading config in test", err)
+		t.Errorf("error while loading config in test: %v", err)
 	}
 
 	srv := New(cfg)
@@ -73,7 +73,7 @@ func TestIngestWrongContentType(t *testing.T) {
 func TestIngestEmptyBody(t *testing.T) {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		fmt.Errorf("error while loading config in test", err)
+		t.Errorf("error while loading config in test: %v", err)
 	}
 
 	srv := New(cfg)
@@ -92,7 +92,7 @@ func TestIngestEmptyBody(t *testing.T) {
 func TestIngestInvalidJSON(t *testing.T) {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		fmt.Errorf("error while loading config in test", err)
+		t.Errorf("error while loading config in test: %v", err)
 	}
 
 	srv := New(cfg)
@@ -110,7 +110,7 @@ func TestIngestInvalidJSON(t *testing.T) {
 func TestWrongMethodReturns405(t *testing.T) {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		fmt.Errorf("error while loading config in test", err)
+		t.Errorf("error while loading config in test: %v", err)
 	}
 
 	srv := New(cfg)

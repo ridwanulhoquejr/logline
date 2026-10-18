@@ -5,7 +5,28 @@ import (
 	"time"
 )
 
+func TestInvalidLgoEntry_Fields(t *testing.T) {
+	testCase := []struct {
+		name  string
+		entry LogEntry
+		want  string
+	}{
+		{"test case 1", LogEntry{Message: "OKK", Service: "api", Timestamp: time.Now(), Data: map[string]any{"key1": "value1"}}, "level is required"},
+		{"test case 2", LogEntry{Level: "Level is given", Service: "api", Message: "message"}, "timestamp is required"},
+		{"test case 2", LogEntry{Level: "Level is given", Message: "This is test"}, "service is required"},
+	}
+
+	for _, tt := range testCase {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ValidateLogEntry(tt.entry); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestValidateLogEntry_MissingFields(t *testing.T) {
+
 	tests := []struct {
 		name  string
 		entry LogEntry
