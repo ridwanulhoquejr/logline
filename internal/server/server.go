@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"log/slog"
 	"logline/internal/config"
+	"logline/internal/store"
 	"net/http"
 	"os"
 )
@@ -16,16 +17,16 @@ type Server struct {
 	cfg    config.Config
 	logger *slog.Logger
 	mux    *http.ServeMux
+	db     *store.Store
 }
 
-func New(cfg config.Config) *Server {
-
-	logger := newLogger(cfg.Env, cfg.LogLevel)
+func New(cfg config.Config, logger *slog.Logger, logStore *store.Store) *Server {
 
 	s := &Server{
 		cfg:    cfg,
 		logger: logger,
 		mux:    http.NewServeMux(),
+		db:     logStore,
 	}
 
 	// here we have to register our routes
@@ -41,7 +42,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
 }
 
-func newLogger(env, logLevel string) *slog.Logger {
+func NewLogger(env, logLevel string) *slog.Logger {
 	var handler slog.Handler
 
 	opts := &slog.HandlerOptions{

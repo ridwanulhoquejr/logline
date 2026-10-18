@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: logline-db
+    environment:
+      POSTGRES_USER: logline
+      POSTGRES_PASSWORD: logline
+      POSTGRES_DB: logline
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

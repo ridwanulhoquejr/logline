@@ -10,16 +10,22 @@ import (
 )
 
 type Config struct {
-	Port     int
-	Env      string
-	LogLevel string
+	Port        int
+	Env         string
+	LogLevel    string
+	DatabaseURL string
+	DBMaxConns  int
+	DBMaxIdle   int
 }
 
 func LoadConfig() (Config, error) {
 	cfg := Config{
-		Port:     4000,
-		Env:      "development",
-		LogLevel: "info",
+		Port:        4000,
+		Env:         "development",
+		LogLevel:    "info",
+		DatabaseURL: "",
+		DBMaxConns:  25,
+		DBMaxIdle:   5,
 	}
 
 	cfg.loadEnv()
@@ -40,9 +46,7 @@ func (c *Config) loadEnv() {
 	// this will ensure to get the config variables from .env
 	_ = godotenv.Load()
 
-	fmt.Println("i am in load env")
 	if v := os.Getenv("LOGLINE_PORT"); v != "" {
-		fmt.Println("i am in os.Getenv logline_port")
 		if p, err := strconv.Atoi(v); err == nil {
 			c.Port = p
 		}
@@ -54,6 +58,22 @@ func (c *Config) loadEnv() {
 
 	if v := os.Getenv("LOG_LEVEL"); v != "" {
 		c.LogLevel = v
+	}
+
+	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+		c.DatabaseURL = dsn
+	}
+
+	if dbMaxConn := os.Getenv("DB_MAX_CONNECTIONS"); dbMaxConn != "" {
+		if dbMaxConnInt, err := strconv.Atoi(dbMaxConn); err == nil {
+			c.DBMaxConns = dbMaxConnInt
+		}
+	}
+
+	if dbMaxIdle := os.Getenv("DB_MAX_IDLE"); dbMaxIdle != "" {
+		if dbMaxIdleInt, err := strconv.Atoi(dbMaxIdle); err == nil {
+			c.DBMaxIdle = dbMaxIdleInt
+		}
 	}
 }
 
@@ -71,6 +91,14 @@ func (c *Config) validate() error {
 
 	if c.Port < 1 || c.Port > 65535 {
 		return fmt.Errorf("port must be between 1 and 65535, got %d", c.Port)
+	}
+
+	if c.DatabaseURL == "" {
+		return fmt.Errorf("DatabaseURL should not be empty")
+	}
+
+	if c.DBMaxConns < 1 || c.DBMaxIdle < 1 {
+		return fmt.Errorf("DBMaxConns or DBMaxIdle must be greater than 0")
 	}
 
 	switch c.Env {

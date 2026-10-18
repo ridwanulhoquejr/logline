@@ -31,6 +31,12 @@ func ValidateLogEntry(entry LogEntry) string {
 	if entry.Timestamp.IsZero() {
 		return "timestamp is required"
 	}
+	if len(entry.Message) > 4096 {
+		return "message exceeds max lenth, should be less than 4096 Bytes"
+	}
+	if len(entry.Service) > 128 {
+		return "service exceeds max lenth, should be less than 128 Bytes"
+	}
 
 	switch entry.Level {
 	case "debug", "info", "warn", "error", "fatal":

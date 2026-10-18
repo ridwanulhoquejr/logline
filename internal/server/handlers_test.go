@@ -1,20 +1,78 @@
 package server
 
 import (
+	"context"
+	"database/sql"
+	"log/slog"
 	"logline/internal/config"
+	"logline/internal/store"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
+	"time"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-func TestHealthEndpoint(t *testing.T) {
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		t.Errorf("error while loading config in test: %v", err)
+func testConfig() config.Config {
+	return config.Config{
+		Port:        4000,
+		Env:         "development",
+		LogLevel:    "error",
+		DatabaseURL: "",
+		DBMaxConns:  5,
+		DBMaxIdle:   1,
+	}
+}
+
+func testLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+}
+
+func setupDB(t *testing.T) *sql.DB {
+	t.Helper()
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("database url is empty, skipping db test")
 	}
 
-	srv := New(cfg)
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening db connection, error: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		db.Close()
+		t.Fatalf("connecting database %v", err)
+	}
+
+	t.Cleanup(func() { db.Close() })
+
+	return db
+
+}
+
+func newTestServer(t *testing.T) *Server {
+	t.Helper()
+
+	cfg := testConfig()
+	logger := testLogger()
+	db := setupDB(t)
+
+	logStore := store.New(db)
+
+	return New(cfg, logger, logStore)
+}
+
+func TestHandleHealth_OK(t *testing.T) {
+
+	srv := newTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -30,13 +88,26 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 }
 
-func TestIngestValidEntry(t *testing.T) {
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		t.Errorf("error while loading config in test: %v", err)
-	}
+func TestHandleHealth_DBDown(t *testing.T) {
 
-	srv := New(cfg)
+	db := setupDB(t)
+	logStore := store.New(db)
+	srv := New(testConfig(), testLogger(), logStore)
+
+	db.Close()
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503, got %d", rec.Code)
+	}
+}
+
+func TestIngestValidEntry(t *testing.T) {
+
+	srv := newTestServer(t)
 
 	payload := `{"level":"error","message":"connection refused","service":"auth","timestamp":"2026-02-27T14:30:00Z"}`
 	req := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader(payload))
@@ -52,12 +123,8 @@ func TestIngestValidEntry(t *testing.T) {
 }
 
 func TestIngestWrongContentType(t *testing.T) {
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		t.Errorf("error while loading config in test: %v", err)
-	}
 
-	srv := New(cfg)
+	srv := newTestServer(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "text/plain")
@@ -71,12 +138,8 @@ func TestIngestWrongContentType(t *testing.T) {
 }
 
 func TestIngestEmptyBody(t *testing.T) {
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		t.Errorf("error while loading config in test: %v", err)
-	}
 
-	srv := New(cfg)
+	srv := newTestServer(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader(""))
 	req.Header.Set("Content-Type", "application/json")
@@ -90,12 +153,9 @@ func TestIngestEmptyBody(t *testing.T) {
 }
 
 func TestIngestInvalidJSON(t *testing.T) {
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		t.Errorf("error while loading config in test: %v", err)
-	}
 
-	srv := New(cfg)
+	srv := newTestServer(t)
+
 	req := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader("definitely not json"))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -108,12 +168,8 @@ func TestIngestInvalidJSON(t *testing.T) {
 }
 
 func TestWrongMethodReturns405(t *testing.T) {
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		t.Errorf("error while loading config in test: %v", err)
-	}
 
-	srv := New(cfg)
+	srv := newTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/ingest", nil)
 	rec := httptest.NewRecorder()

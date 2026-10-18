@@ -1,18 +1,36 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"logline/internal/domain"
 	"net/http"
+	"time"
 )
 
 const maxBodySize = 1_048_576 // 1 MB
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	if err := s.db.Ping(ctx); err != nil {
+		s.logger.Error("health check failed: database unreachable",
+			slog.String("error", err.Error()),
+		)
+
+		writeJSON(w, http.StatusServiceUnavailable,
+			domain.ErrorResponse{Error: "database unreachable"},
+		)
+		return
+	}
+
 	writeJSON(w, http.StatusOK,
-		domain.StatusResponse{Status: "logline is healthy"})
+		domain.StatusResponse{Status: "ok"},
+	)
 }
 
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
