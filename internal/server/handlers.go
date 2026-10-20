@@ -34,6 +34,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
 	// todo: move trace ID generation to a middleware and pass it via context
 	traceID := generateTraceID()
 	logger := s.logger.With(slog.String("trace_id", traceID))
@@ -82,10 +85,20 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Info("log entry accepted",
+	if err := s.db.InsertIngest(ctx, entry); err != nil {
+		logger.Error("failed to store log entry",
+			slog.String("error", err.Error()),
+			slog.String("service", entry.Service),
+		)
+		writeJSON(w, http.StatusInternalServerError, domain.ErrorResponse{
+			Error: "failed to store log entry",
+		})
+		return
+	}
+
+	logger.Info("log entry stored",
 		slog.String("service", entry.Service),
 		slog.String("entry_level", entry.Level),
-		slog.Int64("content_length", r.ContentLength),
 	)
 
 	writeJSON(w, http.StatusCreated, domain.StatusResponse{Status: "accepted"})
