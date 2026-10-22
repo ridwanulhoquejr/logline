@@ -1,6 +1,8 @@
 package domain
 
-import "time"
+import (
+	"time"
+)
 
 type LogEntry struct {
 	Level     string         `json:"level"`

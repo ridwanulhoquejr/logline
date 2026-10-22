@@ -4,13 +4,58 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"logline/internal/domain"
+	"logline/internal/store"
 	"net/http"
+	"strconv"
 	"time"
 )
 
 const maxBodySize = 1_048_576 // 1 MB
+type LogRowResponse struct {
+	Logs       []store.LogRow `json:"logs"`
+	NextCursor *int64         `json:"next_cursor,omitempty"`
+}
+
+func (s *Server) handleListLogs(w http.ResponseWriter, r *http.Request) {
+
+	filter, err := parseLogFilter(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, domain.ErrorResponse{
+			Error: err.Error(),
+		})
+		return
+	}
+
+	logs, err := s.store.QueryLogs(r.Context(), filter)
+	if err != nil {
+		s.logger.Error("failed to query logs", slog.String("error", err.Error()))
+		writeJSON(w, http.StatusInternalServerError, domain.ErrorResponse{
+			Error: "internal error",
+		})
+		return
+	}
+
+	// if db returns an empty page as, convert it to [], not null
+	if logs == nil {
+		logs = []store.LogRow{}
+	}
+
+	// envelope response body
+	resp := LogRowResponse{Logs: logs}
+
+	// if logs length is equal to our limit
+	// then we can say, there would be more rows
+	// so, point the last row.ID as CursorID
+	if len(logs) == filter.Limit {
+		lastID := logs[len(logs)-1].ID
+		resp.NextCursor = &lastID
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
@@ -102,6 +147,67 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	)
 
 	writeJSON(w, http.StatusCreated, domain.StatusResponse{Status: "accepted"})
+}
+
+func parseLogFilter(r *http.Request) (store.LogFilter, error) {
+	query := r.URL.Query()
+
+	filter := store.LogFilter{
+		Level:   query.Get("level"),
+		Service: query.Get("service"),
+		Query:   query.Get("q"),
+		Limit:   50, // treats as default value
+	}
+
+	// validate `from` query param
+	if value := query.Get("from"); value != "" {
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err != nil {
+			return store.LogFilter{}, fmt.Errorf("invalid 'from' timestamp: %w", err)
+		}
+		filter.From = parsed
+	}
+
+	// `to`
+	if value := query.Get("to"); value != "" {
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err != nil {
+			return store.LogFilter{}, fmt.Errorf("invalid 'to' timestamp: %w", err)
+		}
+		filter.To = parsed
+	}
+
+	if value := query.Get("cursor"); value != "" {
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return store.LogFilter{}, fmt.Errorf("invalid 'cursor' value: %w", err)
+		}
+		filter.Cursor = parsed
+	}
+
+	if value := query.Get("limit"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return store.LogFilter{}, fmt.Errorf("invalid 'limit' value: %w", err)
+		}
+		filter.Limit = parsed
+	}
+
+	if value := query.Get("data"); value != "" {
+
+		var dataFilter map[string]any
+		if err := json.Unmarshal([]byte(value), &dataFilter); err != nil {
+			return store.LogFilter{}, fmt.Errorf("invalid 'data' value: %w", err)
+		}
+		filter.DataFilter = dataFilter
+	}
+
+	// if limit is exceeding; assign the default of 50
+	if filter.Limit < 1 || filter.Limit > 200 {
+		filter.Limit = 50
+	}
+
+	return filter, nil
 }
 
 func parseJSON(w http.ResponseWriter, r *http.Request, dst any) error {
