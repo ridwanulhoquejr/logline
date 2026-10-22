@@ -14,19 +14,21 @@ import (
 var _ http.Handler = (*Server)(nil)
 
 type Server struct {
-	cfg    config.Config
-	logger *slog.Logger
-	mux    *http.ServeMux
-	db     *store.Store
+	cfg           config.Config
+	logger        *slog.Logger
+	mux           *http.ServeMux
+	store         *store.Store
+	bufferedStore *store.BufferedStore
 }
 
-func New(cfg config.Config, logger *slog.Logger, logStore *store.Store) *Server {
+func New(cfg config.Config, logger *slog.Logger, logStore *store.Store, bs *store.BufferedStore) *Server {
 
 	s := &Server{
-		cfg:    cfg,
-		logger: logger,
-		mux:    http.NewServeMux(),
-		db:     logStore,
+		cfg:           cfg,
+		logger:        logger,
+		mux:           http.NewServeMux(),
+		store:         logStore,
+		bufferedStore: bs,
 	}
 
 	// here we have to register our routes

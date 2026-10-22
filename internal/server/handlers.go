@@ -17,7 +17,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 
-	if err := s.db.Ping(ctx); err != nil {
+	if err := s.store.Ping(ctx); err != nil {
 		s.logger.Error("health check failed: database unreachable",
 			slog.String("error", err.Error()),
 		)
@@ -85,7 +85,7 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.db.InsertIngest(ctx, entry); err != nil {
+	if err := s.store.InsertLog(ctx, entry); err != nil {
 		logger.Error("failed to store log entry",
 			slog.String("error", err.Error()),
 			slog.String("service", entry.Service),

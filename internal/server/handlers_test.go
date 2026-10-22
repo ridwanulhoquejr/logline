@@ -59,6 +59,9 @@ func setupDB(t *testing.T) *sql.DB {
 }
 
 func newTestServer(t *testing.T) *Server {
+	/// t.Helper() helps to find which line got the error in the call side
+	// as this is a common func several other usecaes wouldcall this helper
+	// Go skips helper frames and reports the line in the test that called the helper:
 	t.Helper()
 
 	cfg := testConfig()
@@ -66,8 +69,18 @@ func newTestServer(t *testing.T) *Server {
 	db := setupDB(t)
 
 	logStore := store.New(db)
+	bufferedStore := setupBufferedStore(t, logStore)
 
-	return New(cfg, logger, logStore)
+	return New(cfg, logger, logStore, bufferedStore)
+}
+
+func setupBufferedStore(t *testing.T, s *store.Store) *store.BufferedStore {
+	t.Helper()
+
+	bs := store.NewBufferedStore(s, 10, 100*time.Second)
+	t.Cleanup(bs.Close)
+
+	return bs
 }
 
 func TestHandleHealth_OK(t *testing.T) {
@@ -92,7 +105,8 @@ func TestHandleHealth_DBDown(t *testing.T) {
 
 	db := setupDB(t)
 	logStore := store.New(db)
-	srv := New(testConfig(), testLogger(), logStore)
+	bs := setupBufferedStore(t, logStore)
+	srv := New(testConfig(), testLogger(), logStore, bs)
 
 	db.Close()
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)

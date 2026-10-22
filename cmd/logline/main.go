@@ -43,7 +43,10 @@ func run() error {
 	)
 
 	logStore := store.New(db)
-	srv := server.New(cfg, logger, logStore)
+	bufferedStore := store.NewBufferedStore(logStore, 500, 500*time.Millisecond)
+	defer bufferedStore.Close()
+
+	srv := server.New(cfg, logger, logStore, bufferedStore)
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	slog.Info("logline starting",
