@@ -2,6 +2,7 @@ package server
 
 import (
 	"log/slog"
+	"logline/internal/auth"
 	"logline/internal/config"
 	"logline/internal/middleware"
 	"logline/internal/store"
@@ -17,11 +18,12 @@ type Server struct {
 	logger        *slog.Logger
 	mux           *http.ServeMux
 	store         *store.Store
+	apiKeyStore   *auth.ApiKeyStore
 	bufferedStore *store.BufferedStore
 	handler       http.Handler
 }
 
-func New(cfg config.Config, logger *slog.Logger, logStore *store.Store, bs *store.BufferedStore) *Server {
+func New(cfg config.Config, logger *slog.Logger, logStore *store.Store, bs *store.BufferedStore, aks *auth.ApiKeyStore) *Server {
 
 	srv := &Server{
 		cfg:           cfg,
@@ -29,6 +31,7 @@ func New(cfg config.Config, logger *slog.Logger, logStore *store.Store, bs *stor
 		mux:           http.NewServeMux(),
 		store:         logStore,
 		bufferedStore: bs,
+		apiKeyStore:   aks,
 	}
 
 	// here we have to register our routes

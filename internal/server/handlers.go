@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"logline/internal/auth"
 	"logline/internal/domain"
 	"logline/internal/middleware"
 	"logline/internal/store"
@@ -18,6 +19,49 @@ const maxBodySize = 1_048_576 // 1 MB
 type LogRowResponse struct {
 	Logs       []store.LogRow `json:"logs"`
 	NextCursor *int64         `json:"next_cursor,omitempty"`
+}
+
+func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
+
+	var req struct {
+		Name    string `json:"name"`
+		Service string `json:"service"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, domain.ErrorResponse{
+			Error: "invalid JSON",
+		})
+		return
+	}
+
+	if req.Name == "" || req.Service == "" {
+		writeJSON(w, http.StatusUnprocessableEntity, domain.ErrorResponse{
+			Error: "name and service is required",
+		})
+		return
+	}
+
+	apiKey, err := s.apiKeyStore.Create(r.Context(), req.Name, req.Service)
+	if err != nil {
+		s.logger.Error("failed to create api key", slog.String("error", err.Error()))
+
+		writeJSON(w, http.StatusInternalServerError, domain.ErrorResponse{
+			Error: "failed to create api key",
+		})
+		return
+	}
+
+	s.logger.Info("created api key",
+		slog.String("name", req.Name),
+		slog.String("service", req.Service),
+	)
+
+	writeJSON(w, http.StatusCreated, map[string]string{
+		"api_key": apiKey,
+		"message": "Store this api key securely. It will not be shown again",
+	})
+
 }
 
 func (s *Server) handleListLogs(w http.ResponseWriter, r *http.Request) {
@@ -126,6 +170,20 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 		)
 		writeJSON(w, http.StatusBadRequest, domain.ErrorResponse{
 			Error: msg,
+		})
+		return
+	}
+
+	apiKey := auth.KeyFromContext(ctx)
+	if apiKey != nil && apiKey.Service != entry.Service {
+
+		logger.Warn("api key scope mismatched",
+			slog.String("key_service", apiKey.Service),
+			slog.String("entry_service", entry.Service),
+		)
+
+		writeJSON(w, http.StatusForbidden, domain.ErrorResponse{
+			Error: fmt.Sprintf("api key is scoped to service %q, not %q", apiKey.Service, entry.Service),
 		})
 		return
 	}

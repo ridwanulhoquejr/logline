@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"logline/internal/auth"
 	"logline/internal/config"
 	"logline/internal/store"
 	"net/http"
@@ -69,9 +70,10 @@ func newTestServer(t *testing.T) *Server {
 	db := setupDB(t)
 
 	logStore := store.New(db)
+	apiKeyStore := auth.NewApiKeyStore(db)
 	bufferedStore := setupBufferedStore(t, logStore)
 
-	return New(cfg, logger, logStore, bufferedStore)
+	return New(cfg, logger, logStore, bufferedStore, apiKeyStore)
 }
 
 func setupBufferedStore(t *testing.T, s *store.Store) *store.BufferedStore {
@@ -105,8 +107,9 @@ func TestHandleHealth_DBDown(t *testing.T) {
 
 	db := setupDB(t)
 	logStore := store.New(db)
+	apiKeyStore := auth.NewApiKeyStore(db)
 	bs := setupBufferedStore(t, logStore)
-	srv := New(testConfig(), testLogger(), logStore, bs)
+	srv := New(testConfig(), testLogger(), logStore, bs, apiKeyStore)
 
 	db.Close()
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"logline/internal/auth"
 	"logline/internal/config"
 	"logline/internal/database"
 	"logline/internal/server"
@@ -50,8 +51,9 @@ func run() error {
 	logStore := store.New(db)
 	bufferedStore := store.NewBufferedStore(logStore, 500, 500*time.Millisecond)
 	defer bufferedStore.Close()
+	apiKeyStore := auth.NewApiKeyStore(db)
 
-	srv := server.New(cfg, logger, logStore, bufferedStore)
+	srv := server.New(cfg, logger, logStore, bufferedStore, apiKeyStore)
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	slog.Info("logline starting",
