@@ -1,10 +1,9 @@
 package server
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"log/slog"
 	"logline/internal/config"
+	"logline/internal/middleware"
 	"logline/internal/store"
 	"net/http"
 	"os"
@@ -19,11 +18,12 @@ type Server struct {
 	mux           *http.ServeMux
 	store         *store.Store
 	bufferedStore *store.BufferedStore
+	handler       http.Handler
 }
 
 func New(cfg config.Config, logger *slog.Logger, logStore *store.Store, bs *store.BufferedStore) *Server {
 
-	s := &Server{
+	srv := &Server{
 		cfg:           cfg,
 		logger:        logger,
 		mux:           http.NewServeMux(),
@@ -32,16 +32,24 @@ func New(cfg config.Config, logger *slog.Logger, logStore *store.Store, bs *stor
 	}
 
 	// here we have to register our routes
-	s.registerRoutes()
+	srv.registerRoutes()
 
-	return s
+	// register all of our middlewares
+	srv.handler = middleware.Chain(
+		srv.mux,
+		middleware.Recovery(srv.logger),
+		middleware.RequestID,
+		middleware.Logging(srv.logger),
+	)
+
+	return srv
 }
 
 // NOTE: After satisfaying http.Handler interface,
 // our Server struct will acts as http.Handler
 // so wherever we need http.Handler we could pass our Server struct
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.mux.ServeHTTP(w, r)
+	s.handler.ServeHTTP(w, r)
 }
 
 func NewLogger(env, logLevel string) *slog.Logger {
@@ -75,15 +83,4 @@ func parseLogLevel(level string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
-}
-
-func generateTraceID() string {
-
-	randomBytes := make([]byte, 16)
-	_, err := rand.Read(randomBytes)
-	if err != nil {
-		return "unknown"
-	}
-
-	return hex.EncodeToString(randomBytes)
 }

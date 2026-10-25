@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"logline/internal/domain"
+	"logline/internal/middleware"
 	"logline/internal/store"
 	"net/http"
 	"strconv"
@@ -81,10 +82,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
+	reqID := middleware.GetRequestID(ctx)
 
-	// todo: move trace ID generation to a middleware and pass it via context
-	traceID := generateTraceID()
-	logger := s.logger.With(slog.String("trace_id", traceID))
+	logger := s.logger.With(slog.String("request_id", reqID))
 
 	if r.Header.Get("Content-Type") != "application/json" {
 		logger.Warn("unsupported content type",
@@ -130,6 +130,8 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// if we want to use the batch-insert;
+	// use `s.bufferedStore.Add(ctx, entry)`, instead of `s.store.InsertLog`
 	if err := s.store.InsertLog(ctx, entry); err != nil {
 		logger.Error("failed to store log entry",
 			slog.String("error", err.Error()),
