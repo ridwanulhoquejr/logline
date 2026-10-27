@@ -13,12 +13,176 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 const maxBodySize = 1_048_576 // 1 MB
 type LogRowResponse struct {
 	Logs       []store.LogRow `json:"logs"`
 	NextCursor *int64         `json:"next_cursor,omitempty"`
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+
+	cookie, err := r.Cookie("session_token")
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]string{
+			"message": "logged out",
+		})
+	}
+
+	if err := s.sessionStore.Delete(r.Context(), cookie.Value); err != nil {
+		s.logger.Error("failed to delete session",
+			slog.String("error", err.Error()),
+		)
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session_token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   s.cfg.Env != "development",
+		MaxAge:   -1,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"message": "logged out",
+	})
+}
+
+func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+		Name     string `json:"name"`
+	}
+
+	if err := parseJSON(w, r, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, domain.ErrorResponse{
+			Error: "invalid request body",
+		})
+		return
+	}
+
+	if req.Email == "" || req.Password == "" || req.Name == "" {
+		writeJSON(w, http.StatusBadRequest, domain.ErrorResponse{
+			Error: "email, password, and name are required",
+		})
+		return
+	}
+
+	if len(req.Password) < 8 {
+		writeJSON(w, http.StatusBadRequest, domain.ErrorResponse{
+			Error: "password must be at least 8 characters",
+		})
+		return
+	}
+
+	user, err := s.userStore.Create(r.Context(), req.Email, req.Password, req.Name)
+	if err != nil {
+		if auth.IsUniqueViolation(err) {
+			writeJSON(w, http.StatusConflict, domain.ErrorResponse{
+				Error: "email already registered",
+			})
+			return
+		}
+
+		s.logger.Error("failed to create user",
+			slog.String("error", err.Error()),
+		)
+		writeJSON(w, http.StatusInternalServerError, domain.ErrorResponse{
+			Error: "internal error",
+		})
+		return
+	}
+
+	s.logger.Info("user registered",
+		slog.Int64("user_id", user.ID),
+		slog.String("email", user.Email),
+	)
+
+	writeJSON(w, http.StatusCreated, map[string]string{
+		"message": "account created",
+	})
+}
+
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	if err := parseJSON(w, r, &req); err != nil {
+
+		s.logger.Error("error while parsing login payload",
+			slog.String("error", err.Error()))
+
+		writeJSON(w, http.StatusBadRequest,
+			domain.ErrorResponse{Error: "invalid payload"})
+		return
+	}
+
+	if req.Email == "" || req.Password == "" {
+		writeJSON(w, http.StatusBadRequest, domain.ErrorResponse{
+			Error: "email and password are required",
+		})
+		return
+	}
+
+	user, err := s.userStore.GetByEmail(r.Context(), req.Email)
+	if err != nil {
+		// run bcrypt anyway so the response time is the same whether the email exists or not.
+		// without this, an attacker can distinguish "email not found" (~1ms) from
+		// "wrong password" (~250ms) by timing the response.
+		_ = bcrypt.CompareHashAndPassword([]byte("$2a$12$dummy!"), []byte(req.Password))
+		writeJSON(w, http.StatusNotFound, domain.ErrorResponse{
+			Error: "invalid email or password",
+		})
+		return
+	}
+
+	// verify the password, if user is found!
+	if err := auth.VerifyPassword(user.PasswordHash, req.Password); err != nil {
+		writeJSON(w, http.StatusUnauthorized, domain.ErrorResponse{
+			Error: "invalid email or password",
+		})
+		return
+	}
+
+	token, err := s.sessionStore.Create(r.Context(), user.ID)
+	if err != nil {
+		s.logger.Error("failed to create session",
+			slog.String("error", err.Error()),
+			slog.Int("user_id", int(user.ID)),
+		)
+
+		writeJSON(w, http.StatusInternalServerError, domain.ErrorResponse{
+			Error: "internal error",
+		})
+	}
+
+	// set cookies
+	http.SetCookie(w,
+		&http.Cookie{
+			Name:     "session_token",
+			Value:    token,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   s.cfg.Env != "development",
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   86400,
+		})
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"message": "logged in",
+	})
+
+	return
 }
 
 func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {

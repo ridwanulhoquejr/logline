@@ -72,8 +72,10 @@ func newTestServer(t *testing.T) *Server {
 	logStore := store.New(db)
 	apiKeyStore := auth.NewApiKeyStore(db)
 	bufferedStore := setupBufferedStore(t, logStore)
+	us := auth.NewUserStore(db)
+	ss := auth.NewSessionStore(db)
 
-	return New(cfg, logger, logStore, bufferedStore, apiKeyStore)
+	return New(cfg, logger, logStore, bufferedStore, apiKeyStore, us, ss)
 }
 
 func setupBufferedStore(t *testing.T, s *store.Store) *store.BufferedStore {
@@ -109,7 +111,9 @@ func TestHandleHealth_DBDown(t *testing.T) {
 	logStore := store.New(db)
 	apiKeyStore := auth.NewApiKeyStore(db)
 	bs := setupBufferedStore(t, logStore)
-	srv := New(testConfig(), testLogger(), logStore, bs, apiKeyStore)
+	us := auth.NewUserStore(db)
+	ss := auth.NewSessionStore(db)
+	srv := New(testConfig(), testLogger(), logStore, bs, apiKeyStore, us, ss)
 
 	db.Close()
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)

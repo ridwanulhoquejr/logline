@@ -53,7 +53,10 @@ func run() error {
 	defer bufferedStore.Close()
 	apiKeyStore := auth.NewApiKeyStore(db)
 
-	srv := server.New(cfg, logger, logStore, bufferedStore, apiKeyStore)
+	userStore := auth.NewUserStore(db)
+	sessionStore := auth.NewSessionStore(db)
+
+	srv := server.New(cfg, logger, logStore, bufferedStore, apiKeyStore, userStore, sessionStore)
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	slog.Info("logline starting",
